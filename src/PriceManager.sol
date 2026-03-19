@@ -126,6 +126,7 @@ abstract contract PriceManager is LinkReceiver, EmergencyWithdrawer, IPriceManag
     i_streamsVerifierProxy = IVerifierProxy(verifierProxy);
 
     if (feedsInfo.length > 0) {
+      // add feedsInfo | remove
       _applyFeedInfoUpdates(feedsInfo, new address[](0));
     }
 
@@ -145,6 +146,7 @@ abstract contract PriceManager is LinkReceiver, EmergencyWithdrawer, IPriceManag
       revert Errors.EmptyList();
     }
 
+    //@note: this step is to verify the relation between dataStreamFeedId and asset
     for (uint256 i; i < unverifiedReports.length; ++i) {
       // Decode the unverified report.
       (, bytes memory reportData,,,) =
@@ -152,16 +154,20 @@ abstract contract PriceManager is LinkReceiver, EmergencyWithdrawer, IPriceManag
 
       bytes32 dataStreamsFeedId = bytes32(reportData);
 
+      //? are the lookup and the whitelist with consistency
       if (s_dataStreamsFeedIdToAsset[dataStreamsFeedId] == address(0)) {
         revert FeedNotAllowlisted(dataStreamsFeedId);
       }
     }
+    //? what detaStreamFeedId represents
 
     // Verify report through the proxy, decode & store prices.
+    //@note: Verifier#1
     bytes[] memory verifiedReports = i_streamsVerifierProxy.verifyBulk(unverifiedReports, abi.encode(i_linkToken));
 
     for (uint256 i; i < verifiedReports.length; ++i) {
       ReportV3 memory report = abi.decode(verifiedReports[i], (ReportV3));
+
       address asset = s_dataStreamsFeedIdToAsset[report.dataStreamsFeedId];
       FeedInfo storage feedInfo = s_feedInfo[asset];
 
@@ -214,6 +220,7 @@ abstract contract PriceManager is LinkReceiver, EmergencyWithdrawer, IPriceManag
   /// @dev precondition - added/updated when data streams feed id is set it must be of version 3.
   /// @param adds List of feed information to add or update (allowlists new assets).
   /// @param removes List of assets to remove (removes assets from allowlist and clean up feed info state).
+  //@note: used in update and constructor
   function _applyFeedInfoUpdates(
     ApplyFeedInfoUpdateParams[] memory adds,
     address[] memory removes
