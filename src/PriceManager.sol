@@ -66,6 +66,8 @@ abstract contract PriceManager is LinkReceiver, EmergencyWithdrawer, IPriceManag
     int192 ask; //                     Simulated sell impact price at X% liquidity depth.
   }
 
+  //@note: The Price Source, decimal, staleness
+  //@note: the config of one asset
   /// @notice The parameters for adding or updating feed information.
   struct FeedInfo {
     bytes32 dataStreamsFeedId; //                       Unique identifier for the data stream.
@@ -74,12 +76,18 @@ abstract contract PriceManager is LinkReceiver, EmergencyWithdrawer, IPriceManag
     uint8 dataStreamsFeedDecimals; // ─────╯ Number of decimals in the reported price.
   }
 
+  //@note: update the set of feedInfo configuration for one asset
+  //? Before updating, should old feedId mappings be cleaned up?
+  //? Is duplicate feedIds allowed?
+  //? Is an allowlist mandatory for assets?
+  //? Are there any feed conflicts caused by administrator misconfiguration?
   /// @notice The parameters for adding or updating feed information.
   struct ApplyFeedInfoUpdateParams {
     address asset; // Address of the asset.
     FeedInfo feedInfo; // The asset feeds configurations.
   }
 
+  //@note: what was the price of this asset after its most recent on-chain verification
   /// @notice Stored price information.
   struct DataStreamsPriceInfo {
     uint224 usdPrice; // ─╮ USD price scaled to 18 decimals.

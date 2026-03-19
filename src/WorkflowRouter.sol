@@ -45,6 +45,7 @@ contract WorkflowRouter is PausableWithAccessControl, Caller, IReceiver, ITypeAn
   /// @param selector The function selector that was removed from the allowlist.
   event SelectorRemovedFromAllowlist(bytes32 indexed workflowId, address indexed target, bytes4 indexed selector);
 
+  //@note: the finest-grained execution permission configuration
   /// @notice Parameters to allowlist a target and selector for a workflow ID.
   struct TargetSelectors {
     address target; // The target address to allowlist for the workflow ID.
@@ -53,7 +54,9 @@ contract WorkflowRouter is PausableWithAccessControl, Caller, IReceiver, ITypeAn
 
   /// @notice Parameters to set a workflow ID for a specific workflow type.
   struct AllowlistedWorkflow {
+    //? how does the workflowId be generated
     bytes32 workflowId; // The unique identifier of the workflow.
+    //? uups
     TargetSelectors[] targetSelectors; // The target and selector pairs that are allowlisted for the workflow ID.
   }
 

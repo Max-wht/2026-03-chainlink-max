@@ -15,6 +15,7 @@ import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
+//@note: A Programable bidder instead of a EOA
 /// @title Auction Bidder v1.0.0 Contract.
 /// @notice This contract is responsible for bidding on auctions and executing arbitrary logic to solve the auction.
 contract AuctionBidder is PausableWithAccessControl, Caller, IAuctionCallback, ITypeAndVersion {

@@ -61,6 +61,7 @@ contract GPV2CompatibleAuction is BaseAuction, IERC1271, IGPV2CompatibleAuction 
   /// @notice This error is thrown when the CowProtocol order does not use direct ERC20 balances.
   error InvalidTokenBalanceMarker();
 
+  //?partial fill
   /// @notice The CowSwap vault relayer address.
   address private immutable i_gpV2VaultRelayer;
   /// @notice The GPv2Settlement contract address.

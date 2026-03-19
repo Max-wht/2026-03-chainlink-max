@@ -106,13 +106,15 @@ abstract contract BaseAuction is PriceManager, ITypeAndVersion, Caller, IBaseAuc
     // The initial contract admin.
     uint48 adminRoleTransferDelay; // ────────────────────╯ The min seconds
     // before the admin address can be transferred.
+    //? what is the decimal of the minPriceMutiplier
     uint64 minPriceMultiplier; // ────────────────────────╮ The
     // auction price multiplier lower bound in basis points
     //                                                    │ used for input validation of all assets configured in the
     //                                                    │ contract.
     address verifierProxy; // ────────────────────────────╯
+    //? Check the schema version / feedId / timestamp returned by verifier
     // The address of the Data Streams VerifierProxy contract.
-    uint88 minBidUsdValue; // ────────────────────────────╮
+    uint88 minbidusdvalue; // ────────────────────────────╮
     // The minimum bid USD value in 18 decimals.
     address linkToken; // ────────────────────────────────╯
     // The address of the LINK token contract.
@@ -133,13 +135,17 @@ abstract contract BaseAuction is PriceManager, ITypeAndVersion, Caller, IBaseAuc
   ///   - decayRatePerSecond = (1.1e18 - 0.98e18) / 3600 = 33333333333333 (rounded down to avoid higher
   ///     discount than 2%)
   struct AssetParams {
+    //? what is the decimal of USD? ConstructorParams.minbidusdvalue is 18
     uint96 minAuctionSizeUsd; // ───────╮ The minimum swap size expressed in USD feed decimals.
     uint64 startingPriceMultiplier; //  │ The starting price multiplier with 18 decimals precision.
     uint64 endingPriceMultiplier; //    │ The ending price multiplier with 18 decimals precision.
-    uint24 auctionDuration; //          │ The duration of the auction in seconds.
+    //? upper limit of auctionDuration
+    uint24 auctionDuration; //          │ The duration of the auction in seconds. 18 decimals
+    //? check the relationship with ConstructorParams.minPriceMutiplier
     uint8 decimals; //  ────────────────╯ The asset decimals.
   }
 
+  //? Will changing the parameters affect the ongoing auction?
   /// @notice The parameters for adding or updating asset parameters.
   struct ApplyAssetParamsUpdate {
     address asset; // The address of the asset.

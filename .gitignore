@@ -26,3 +26,5 @@ coverage.json
 .idea
 
 olympix
+
+audit/findings.md
