@@ -270,7 +270,7 @@ The second rule is a dust cleanup rule.
 ### 4. Bid value check
 
 Every bid is checked in USD terms:
-
+//? what is the decimal of assetPrice
 `bidUsdValue = amountIn * assetPrice / 10^assetDecimals`
 
 The bid must be at least `s_minBidUsdValue`.
@@ -310,6 +310,7 @@ Plain flow:
 The contract uses round-up math in key places so the payer does not underpay because of rounding.
 
 <a id="file-overviews"></a>
+
 ## File Overviews
 
 <a id="price-manager-sol"></a>
