@@ -114,7 +114,7 @@ abstract contract BaseAuction is PriceManager, ITypeAndVersion, Caller, IBaseAuc
     address verifierProxy; // ────────────────────────────╯
     //? Check the schema version / feedId / timestamp returned by verifier
     // The address of the Data Streams VerifierProxy contract.
-    uint88 minbidusdvalue; // ────────────────────────────╮
+    uint88 minBidusdvalue; // ────────────────────────────╮
     // The minimum bid USD value in 18 decimals.
     address linkToken; // ────────────────────────────────╯
     // The address of the LINK token contract.
