@@ -154,7 +154,7 @@ abstract contract PriceManager is LinkReceiver, EmergencyWithdrawer, IPriceManag
 
       bytes32 dataStreamsFeedId = bytes32(reportData);
 
-      //? are the lookup and the whitelist with consistency
+      //!!! are the lookup and the whitelist with consistency
       if (s_dataStreamsFeedIdToAsset[dataStreamsFeedId] == address(0)) {
         revert FeedNotAllowlisted(dataStreamsFeedId);
       }
@@ -168,9 +168,11 @@ abstract contract PriceManager is LinkReceiver, EmergencyWithdrawer, IPriceManag
     for (uint256 i; i < verifiedReports.length; ++i) {
       ReportV3 memory report = abi.decode(verifiedReports[i], (ReportV3));
 
+      //!!! same as above
       address asset = s_dataStreamsFeedIdToAsset[report.dataStreamsFeedId];
       FeedInfo storage feedInfo = s_feedInfo[asset];
 
+      //Decimal=?
       uint256 usdPrice = int256(report.price).toUint256();
 
       if (report.observationsTimestamp < block.timestamp - feedInfo.stalenessThreshold) {
@@ -180,6 +182,7 @@ abstract contract PriceManager is LinkReceiver, EmergencyWithdrawer, IPriceManag
       // Scale price to 18 decimals.
       uint8 feedDecimals = feedInfo.dataStreamsFeedDecimals;
       if (feedDecimals < PRICE_DECIMALS) {
+        //usdPrice is 18 decimals
         usdPrice = (usdPrice * 10 ** (PRICE_DECIMALS - feedDecimals));
       } else if (feedDecimals > PRICE_DECIMALS) {
         usdPrice = (usdPrice / 10 ** (feedDecimals - PRICE_DECIMALS));
@@ -229,6 +232,7 @@ abstract contract PriceManager is LinkReceiver, EmergencyWithdrawer, IPriceManag
       revert Errors.EmptyList();
     }
 
+    //this step is to remove
     for (uint256 i; i < removes.length; ++i) {
       address asset = removes[i];
 
@@ -298,14 +302,17 @@ abstract contract PriceManager is LinkReceiver, EmergencyWithdrawer, IPriceManag
       FeedInfo storage existingFeedInfo = s_feedInfo[asset];
 
       if (s_allowlistedAssets.add(asset)) {
+        //add case
         emit AssetAddedToAllowlist(asset);
       } else if (existingFeedInfo.dataStreamsFeedId != feedInfo.dataStreamsFeedId) {
+        //update case 
         // If we are updating the feed ID for an already allowlisted asset, we need to clean up the old feed ID to asset
         // mapping and the old price, as they will no longer be valid.
         delete s_dataStreamsFeedIdToAsset[existingFeedInfo.dataStreamsFeedId];
         delete s_dataStreamsPrice[asset];
       }
 
+      //@note: s_feedInfo update here
       s_feedInfo[asset] = FeedInfo({
         dataStreamsFeedId: feedInfo.dataStreamsFeedId,
         usdDataFeed: feedInfo.usdDataFeed,

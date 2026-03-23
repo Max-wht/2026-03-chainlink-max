@@ -6,11 +6,11 @@
 - [System View](#system-view)
 - [Key Data Structures](#key-data-structures)
   - [Shared and Support](#shared-and-support)
-  - [PriceManager](#priceManager)
-  - [BaseAuction](#baseAuction)
-  - [GPV2CompatibleAuction](#GPV2CompatibleAuction)
-  - [AuctionBidder](#auctionBidder)
-  - [WorkflowRouter](#workflowRouter)
+  - [Price Manager](#price-manager)
+  - [Base Auction](#base-auction)
+  - [GPV2 Compatible Auction](#gpv2-compatible-auction)
+  - [Auction Bidder](#auction-bidder)
+  - [Workflow Router](#workflow-router)
 - [Math and Pricing Models](#math-and-pricing-models)
   - [Price normalization](#price-normalization)
   - [Price freshness model](#price-freshness-model)
@@ -19,22 +19,20 @@
   - [Auction price curve](#auction-price-curve)
   - [AssetOut amount calculation](#assetout-amount-calculation)
 - [File Overviews](#file-overviews)
-  - [`src/PriceManager.sol`](#price-manager-sol)
-  - [`src/BaseAuction.sol`](#base-auction-sol)
-  - [`src/GPV2CompatibleAuction.sol`](#gpv2-compatible-auction-sol)
-  - [`src/AuctionBidder.sol`](#auction-bidder-sol)
-  - [`src/WorkflowRouter.sol`](#workflow-router-sol)
-  - [`src/Caller.sol`](#caller-sol)
-  - [`src/interfaces/IBaseAuction.sol`](#ibase-auction-sol)
-  - [`src/interfaces/IAuctionCallback.sol`](#iauction-callback-sol)
-  - [`src/interfaces/IGPV2CompatibleAuction.sol`](#igpv2-compatible-auction-sol)
-  - [`src/interfaces/IGPV2Settlement.sol`](#igpv2-settlement-sol)
-  - [`src/interfaces/IPriceManager.sol`](#iprice-manager-sol)
-  - [`src/libraries/Errors.sol`](#errors-sol)
-  - [`src/libraries/Roles.sol`](#roles-sol)
+  - [PriceManager.sol](#pricemanagersol)
+  - [BaseAuction.sol](#baseauctionsol)
+  - [GPV2CompatibleAuction.sol](#gpv2compatibleauctionsol)
+  - [AuctionBidder.sol](#auctionbiddersol)
+  - [WorkflowRouter.sol](#workflowroutersol)
+  - [Caller.sol](#callersol)
+  - [IBaseAuction.sol](#ibaseauctionsol)
+  - [IAuctionCallback.sol](#iauctioncallbacksol)
+  - [IGPV2CompatibleAuction.sol](#igpv2compatibleauctionsol)
+  - [IGPV2Settlement.sol](#igpv2settlementsol)
+  - [IPriceManager.sol](#ipricemanagersol)
+  - [Errors.sol](#errorssol)
+  - [Roles.sol](#rolessol)
 - [Short Risk Lens](#short-risk-lens)
-
-<a id="scope"></a>
 
 ## Scope
 
@@ -56,8 +54,6 @@ This note follows the scope rule in [out_of_scope.txt](/Users/max/code/defi-secu
 
 Out-of-scope contracts still matter for context. The most important ones are the pause/access-control base contracts, the LINK receiver, emergency withdrawal helpers, `Common.AssetAmount`, and the fee aggregator interface.
 
-<a id="system-view"></a>
-
 ## System View
 
 At a high level, this repo has two main parts:
@@ -73,11 +69,7 @@ The auction flow is:
 4. `GPV2CompatibleAuction` lets the same auction be solved through CoW Protocol orders.
 5. `AuctionBidder` is a helper contract that can execute a multi-step solution and then settle the bid.
 
-<a id="key-data-structures"></a>
-
 ## Key Data Structures
-
-<a id="shared-and-support"></a>
 
 ### Shared and Support
 
@@ -97,9 +89,7 @@ The auction flow is:
   - Asset address plus amount.
   - Used when the auction pulls balances from the fee aggregator and when the bidder admin withdraws tokens.
 
-<a id="price-manager"></a>
-
-### PriceManager
+### Price Manager
 
 - `ReportV3`
   - Decoded Data Streams report.
@@ -130,9 +120,7 @@ The auction flow is:
 - `s_dataStreamsPrice`
   - Asset -> latest stored stream price.
 
-<a id="base-auction"></a>
-
-### BaseAuction
+### Base Auction
 
 - `ConstructorParams`
   - Startup config for the auction system.
@@ -172,9 +160,7 @@ The auction flow is:
 - `s_entered`
   - Reentrancy guard for the bid path.
 
-<a id="gpv2-compatible-auction"></a>
-
-### GPV2CompatibleAuction
+### GPV2 Compatible Auction
 
 - `i_gpV2VaultRelayer`
   - The CoW vault relayer that receives token approval during a live auction.
@@ -186,9 +172,7 @@ The auction flow is:
   - Not defined locally, but it is the main order format checked in `isValidSignature`.
   - Important fields in practice: sell token, buy token, receiver, sell amount, buy amount, expiry, fee, order kind, partial-fill flag, and balance markers.
 
-<a id="auction-bidder"></a>
-
-### AuctionBidder
+### Auction Bidder
 
 - `s_auction`
   - The auction contract this bidder works with.
@@ -196,9 +180,7 @@ The auction flow is:
 - `s_receiver`
   - Optional address that receives leftover `assetOut` after a bid is solved.
 
-<a id="workflow-router"></a>
-
-### WorkflowRouter
+### Workflow Router
 
 - `TargetSelectors`
   - One target plus the function selectors allowed on that target.
@@ -218,13 +200,9 @@ The auction flow is:
 - `s_workflowInfos`
   - Workflow ID -> `WorkflowInfo`.
 
-<a id="math-and-pricing-models"></a>
-
 ## Math and Pricing Models
 
-<a id="price-normalization"></a>
-
-### 1. Price normalization
+### Price normalization
 
 All asset prices are normalized to 18 decimals.
 
@@ -234,9 +212,7 @@ All asset prices are normalized to 18 decimals.
 
 This makes later auction math simpler because every USD price uses the same unit.
 
-<a id="price-freshness-model"></a>
-
-### 2. Price freshness model
+### Price freshness model
 
 Each asset has a `stalenessThreshold`.
 
@@ -247,9 +223,7 @@ Each asset has a `stalenessThreshold`.
 
 This means pricing is "prefer streams, fallback to feed, reject stale or zero data."
 
-<a id="auction-start-and-end-rules"></a>
-
-### 3. Auction start and end rules
+### Auction start and end rules
 
 An auction can start only when:
 
@@ -265,9 +239,7 @@ An auction ends when either:
 
 The second rule is a dust cleanup rule.
 
-<a id="bid-value-check"></a>
-
-### 4. Bid value check
+### Bid value check
 
 Every bid is checked in USD terms:
 //? what is the decimal of assetPrice
@@ -275,9 +247,7 @@ Every bid is checked in USD terms:
 
 The bid must be at least `s_minBidUsdValue`.
 
-<a id="auction-price-curve"></a>
-
-### 5. Auction price curve
+### Auction price curve
 
 The auction price moves linearly over time from `startingPriceMultiplier` to `endingPriceMultiplier`.
 
@@ -293,9 +263,7 @@ The effective multiplier is:
 
 So the discount grows linearly with time.
 
-<a id="assetout-amount-calculation"></a>
-
-### 6. AssetOut amount calculation
+### AssetOut amount calculation
 
 The auction converts the sold asset into USD value, applies the time-based multiplier, then converts that USD value into `assetOut`.
 
@@ -309,13 +277,9 @@ Plain flow:
 
 The contract uses round-up math in key places so the payer does not underpay because of rounding.
 
-<a id="file-overviews"></a>
-
 ## File Overviews
 
-<a id="price-manager-sol"></a>
-
-### `src/PriceManager.sol`
+### PriceManager.sol
 
 Purpose:
 Stores trusted asset prices for the auction system. It accepts Data Streams reports, keeps per-asset feed config, and falls back to Chainlink data feeds when needed.
@@ -370,12 +334,10 @@ Function overview:
 - `supportsInterface`
   - ERC165 support check.
 
-<a id="base-auction-sol"></a>
-
-### `src/BaseAuction.sol`
+### BaseAuction.sol
 
 Purpose:
-Implements the main auction engine. It decides when auctions start and end, holds per-asset auction settings, and lets bidders buy assets with the common payment token.
+Implements the main auction engine. It decides when auctions start and end, holds per-asset auction settings, and lets bidders buy assets with the common payment token(asset out).
 
 Main responsibilities:
 
@@ -410,7 +372,7 @@ Function overview:
 
 - `bid`
   - Main user entry point for buying auctioned assets.
-  - Checks auction validity, computes the current price, transfers the auctioned asset out, optionally runs a callback, and then pulls in `assetOut`.
+  - Checks auction validity, computes the current price, transfers the auctioned asset out (user transfer to protocol), optionally runs a callback, and then pulls in `assetOut`.
 
 - `setMinBidUsdValue`
   - Admin setter for the global bid floor.
@@ -484,9 +446,7 @@ Function overview:
 - `supportsInterface`
   - ERC165 support check.
 
-<a id="gpv2-compatible-auction-sol"></a>
-
-### `src/GPV2CompatibleAuction.sol`
+### GPV2CompatibleAuction.sol
 
 Purpose:
 Adds CoW Protocol compatibility on top of `BaseAuction`. It lets the auction act like an EIP-1271 signer for valid CoW sell orders.
@@ -524,9 +484,7 @@ Function overview:
 - `getGPV2Settlement`
   - Returns the settlement contract.
 
-<a id="auction-bidder-sol"></a>
-
-### `src/AuctionBidder.sol`
+### AuctionBidder.sol
 
 Purpose:
 Acts as a controlled bidder/solver contract. It can either do a simple direct bid or run custom call steps before settling the payment side of the auction.
@@ -577,8 +535,7 @@ Function overview:
 - `supportsInterface`
   - ERC165 support check.
 
-<a id="workflow-router-sol"></a>
-### `src/WorkflowRouter.sol`
+### WorkflowRouter.sol
 
 Purpose:
 Acts as a guarded forwarder for Chainlink workflow reports. It only lets approved workflow IDs call approved targets with approved selectors.
@@ -629,8 +586,7 @@ Function overview:
 - `supportsInterface`
   - ERC165 support check.
 
-<a id="caller-sol"></a>
-### `src/Caller.sol`
+### Caller.sol
 
 Purpose:
 Small helper for low-level external calls.
@@ -644,8 +600,7 @@ Function overview:
   - Runs a list of calls in order.
   - Reverts if the list is empty.
 
-<a id="ibase-auction-sol"></a>
-### `src/interfaces/IBaseAuction.sol`
+### IBaseAuction.sol
 
 Purpose:
 Defines the public auction surface used by workers and bidders.
@@ -667,8 +622,7 @@ Function overview:
 - `getAssetOutAmount`
   - Returns a quote for how much payment token is needed.
 
-<a id="iauction-callback-sol"></a>
-### `src/interfaces/IAuctionCallback.sol`
+### IAuctionCallback.sol
 
 Purpose:
 Defines the callback that the auction can use when a bidder wants custom logic during settlement.
@@ -678,8 +632,7 @@ Function overview:
 - `auctionCallback`
   - Receives callback context and custom data from the auction bid flow.
 
-<a id="igpv2-compatible-auction-sol"></a>
-### `src/interfaces/IGPV2CompatibleAuction.sol`
+### IGPV2CompatibleAuction.sol
 
 Purpose:
 Small extension interface for CoW-specific order invalidation.
@@ -689,8 +642,7 @@ Function overview:
 - `invalidateOrders`
   - Invalidates one or more CoW order UIDs.
 
-<a id="igpv2-settlement-sol"></a>
-### `src/interfaces/IGPV2Settlement.sol`
+### IGPV2Settlement.sol
 
 Purpose:
 Minimal external interface to the CoW settlement contract.
@@ -707,8 +659,7 @@ Function overview:
 - `invalidateOrder`
   - Invalidates one CoW order UID.
 
-<a id="iprice-manager-sol"></a>
-### `src/interfaces/IPriceManager.sol`
+### IPriceManager.sol
 
 Purpose:
 Defines the public pricing update entry point.
@@ -718,8 +669,7 @@ Function overview:
 - `transmit`
   - Accepts Data Streams report payloads and updates stored prices.
 
-<a id="errors-sol"></a>
-### `src/libraries/Errors.sol`
+### Errors.sol
 
 Purpose:
 Central error list shared across the system.
@@ -729,8 +679,7 @@ Overview:
 - No functions.
 - Defines reusable custom errors for invalid input, stale pricing, access control, allowlist mistakes, unchanged config, bad fee aggregator config, and reentrancy.
 
-<a id="roles-sol"></a>
-### `src/libraries/Roles.sol`
+### Roles.sol
 
 Purpose:
 Central role ID list shared across the system.
@@ -740,7 +689,6 @@ Overview:
 - No functions.
 - Defines role constants for pausing, unpausing, asset management, pricing, workflow forwarding, auction work, bidding, and CoW order management.
 
-<a id="short-risk-lens"></a>
 ## Short Risk Lens
 
 The most important moving parts for audit attention are:

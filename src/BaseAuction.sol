@@ -106,7 +106,8 @@ abstract contract BaseAuction is PriceManager, ITypeAndVersion, Caller, IBaseAuc
     // The initial contract admin.
     uint48 adminRoleTransferDelay; // ────────────────────╯ The min seconds
     // before the admin address can be transferred.
-    //? what is the decimal of the minPriceMutiplier
+    //. what is the decimal of the minPriceMutiplier
+    //. 1e18
     uint64 minPriceMultiplier; // ────────────────────────╮ The
     // auction price multiplier lower bound in basis points
     //                                                    │ used for input validation of all assets configured in the
@@ -135,17 +136,17 @@ abstract contract BaseAuction is PriceManager, ITypeAndVersion, Caller, IBaseAuc
   ///   - decayRatePerSecond = (1.1e18 - 0.98e18) / 3600 = 33333333333333 (rounded down to avoid higher
   ///     discount than 2%)
   struct AssetParams {
-    //? what is the decimal of USD? ConstructorParams.minbidusdvalue is 18
+    //. what is the decimal of USD? ConstructorParams.minbidusdvalue is 18
+    //. 18
     uint96 minAuctionSizeUsd; // ───────╮ The minimum swap size expressed in USD feed decimals.
     uint64 startingPriceMultiplier; //  │ The starting price multiplier with 18 decimals precision.
     uint64 endingPriceMultiplier; //    │ The ending price multiplier with 18 decimals precision.
-    //? upper limit of auctionDuration
     uint24 auctionDuration; //          │ The duration of the auction in seconds. 18 decimals
-    //? check the relationship with ConstructorParams.minPriceMutiplier
     uint8 decimals; //  ────────────────╯ The asset decimals.
   }
 
-  //? Will changing the parameters affect the ongoing auction?
+  //. Will changing the parameters affect the ongoing auction?
+  //. no
   /// @notice The parameters for adding or updating asset parameters.
   struct ApplyAssetParamsUpdate {
     address asset; // The address of the asset.
@@ -164,7 +165,7 @@ abstract contract BaseAuction is PriceManager, ITypeAndVersion, Caller, IBaseAuc
   /// @notice The minimum bid USD value in 18 decimals.
   uint88 internal s_minBidUsdValue;
   /// @notice The asset out of all the auctions.
-  address internal s_assetOut;
+  address internal s_assetOut; // user have to pay through
   /// @notice The receiver of to tokens.
   address internal s_assetOutReceiver;
   /// @notice The fee aggregator
@@ -207,21 +208,22 @@ abstract contract BaseAuction is PriceManager, ITypeAndVersion, Caller, IBaseAuc
 
   /// @inheritdoc IBaseAuction
   /// @dev This function checks for eligible assets to start auctions and ended auctions to be closed.
-  /// @dev precondition - The contract must not be paused.
+  /// @dev precondition - The contract must not be paused.(inherited in priceManager.sol)
   /// @dev precondition - The asset out must be configured.
   /// For an auction to be considered eligible to start, the following conditions must be met:
   ///   1) The asset out price must be valid (not stale and not zero).
-  ///   2) There is no live auction for the asset.
-  ///   3) The asset price is valid (not stale and not zero).
+  ///   2) There is no live auction for the asset(In).
+  ///   3) The asset(In) price is valid (not stale and not zero).
   ///   4) The total USD value of the asset (in both the fee aggregator and the auction contract) is above the minimum
   ///      auction size.
   /// For an auction to be considered ended, either of the following conditions must be met:
   ///   - The auction duration has elapsed since the auction start time.
-  ///   - The total USD value of the asset remaining in the auction contract is below the minimum auction size. This is
-  ///     to guard against dust attacks.
+  ///   - The total USD value of the asset(In) remaining in the auction contract is below the minimum auction size. This
+  /// is to guard against dust attacks.
   function checkUpkeep(
     bytes calldata
   ) external view whenNotPaused whenAssetOutConfigured returns (bool upkeepNeeded, bytes memory performData) {
+    //no paused
     address feeAggregator = address(s_feeAggregator);
     address[] memory auctions = s_allowlistedAssets.values();
     Common.AssetAmount[] memory eligibleAssets = new Common.AssetAmount[](auctions.length);
@@ -248,19 +250,27 @@ abstract contract BaseAuction is PriceManager, ITypeAndVersion, Caller, IBaseAuc
       }
 
       // 1) Check for live or ended auctions.
+      //@audit[#1] use startsTime to assmue the auction is alive
       uint256 auctionStart = s_auctionStarts[asset];
       if (auctionStart != 0) {
-        uint256 assetBalance = IERC20(asset).balanceOf(address(this));
+        //: the asset has been used
+      //so we need to calculate the value of the asset in the auction
+        uint256 assetBalance = IERC20(asset).balanceOf(address(this)); //`assetBalance means the asset has been in
+        // auction`
         uint256 assetBalanceUsdValue = (assetBalance * assetPrice) / (10 ** assetParams.decimals);
         if (
-          auctionStart + assetParams.auctionDuration < block.timestamp
-            || (isPriceValid && assetBalanceUsdValue < assetParams.minAuctionSizeUsd)
+          auctionStart + assetParams.auctionDuration < block.timestamp // Expired
+            || (isPriceValid && assetBalanceUsdValue < assetParams.minAuctionSizeUsd) //Price is valid but less than
+          // minSize
+          //@audit[#1] 
         ) {
           endedAuctions[endedAuctionsIdx++] = asset;
         }
       } else if (isPriceValid) {
-        // 2) Get the current asset value in USD available for auction.
-        uint256 availableBalance = IERC20(asset).balanceOf(feeAggregator);
+        // Price is vaild and the asset has never been used
+      // 2) Get the current asset value in USD available for auction.
+        uint256 availableBalance = IERC20(asset).balanceOf(feeAggregator); //`availableBalance means the asset ready to
+        // go to the auction`
         uint256 availableAssetUsdValue = (availableBalance * assetPrice) / (10 ** assetParams.decimals);
 
         // 3) Auction asset if the asset's current USD balance is above the minimum auction size.
@@ -323,6 +333,7 @@ abstract contract BaseAuction is PriceManager, ITypeAndVersion, Caller, IBaseAuc
 
     bool hasFeeAggregator = address(s_feeAggregator) != address(this);
 
+    //pull the auction asset into this contract
     if (hasFeeAggregator && eligibleAssets.length > 0) {
       s_feeAggregator.transferForSwap(address(this), eligibleAssets);
     }
@@ -330,6 +341,7 @@ abstract contract BaseAuction is PriceManager, ITypeAndVersion, Caller, IBaseAuc
     for (uint256 i; i < eligibleAssets.length; ++i) {
       address asset = eligibleAssets[i].asset;
 
+      // live auction can't start twice at the same time
       if (s_auctionStarts[asset] != 0) {
         revert LiveAuction();
       }
@@ -386,6 +398,7 @@ abstract contract BaseAuction is PriceManager, ITypeAndVersion, Caller, IBaseAuc
   /// transferring all asset out balance to the asset out receiver.
   /// @param asset The address of the asset being auctioned.
   /// @param hasFeeAggregator Whether a fee aggregator is configured.
+  // transfer to fee_aggregater or assetOut_receiver
   function _onAuctionEnd(
     address asset,
     bool hasFeeAggregator
@@ -413,6 +426,7 @@ abstract contract BaseAuction is PriceManager, ITypeAndVersion, Caller, IBaseAuc
   /// @dev precondition - The call must not be reentered.
   /// @dev precondition - The bid USD value must be above the minimum auction size.
   /// @dev precondition - The bid amount must be less than or equal to the available amount in the auction.
+  // every one can call this function
   function bid(
     address asset,
     uint256 amount,
@@ -423,15 +437,17 @@ abstract contract BaseAuction is PriceManager, ITypeAndVersion, Caller, IBaseAuc
     }
     s_entered = true;
 
+    //get the auction asset info
     AssetParams memory assetParams = s_assetParams[asset];
     uint256 auctionStart = s_auctionStarts[asset];
 
-    uint256 elapsedTime = block.timestamp - auctionStart;
+    uint256 elapsedTime = block.timestamp - auctionStart; //calculate the duration
 
+    // the auction isn't open OR out of valid_duration
     if (auctionStart == 0 || elapsedTime > assetParams.auctionDuration) {
       revert InvalidAuction(asset);
     }
-
+ 
     (uint256 assetPrice,,) = _getAssetPrice(asset, true);
     uint256 bidUsdValue = (amount * assetPrice) / (10 ** assetParams.decimals);
     uint88 minBidUsdValue = s_minBidUsdValue;
@@ -445,6 +461,7 @@ abstract contract BaseAuction is PriceManager, ITypeAndVersion, Caller, IBaseAuc
       revert BidAmountTooHigh(amount, availableBalance);
     }
 
+    //calculate how much to pay
     uint256 assetOutAmount = _getAssetOutAmount(assetParams, assetPrice, amount, elapsedTime, true);
 
     IERC20(asset).safeTransfer(msg.sender, amount);
@@ -611,6 +628,7 @@ abstract contract BaseAuction is PriceManager, ITypeAndVersion, Caller, IBaseAuc
 
     address assetOut = s_assetOut;
 
+    // 1) remove auction asset
     for (uint256 i; i < removes.length; ++i) {
       address asset = removes[i];
 
@@ -793,15 +811,17 @@ abstract contract BaseAuction is PriceManager, ITypeAndVersion, Caller, IBaseAuc
     // Compute price multiplier based on linear decay with:
     //
     //                                              startingPriceMultiplier - endingPriceMultiplier
-    // priceMultiplier = startingPriceMultiplier * ------------------------------------------------- * elapsedTime
+    // priceMultiplier = startingPriceMultiplier - -------------------------------------------------(this is the decay rate)* elapsedTime
     //                                                              auctionDuration
     //
+    // how many times the base price (1e18)
     uint256 priceMultiplier = assetInParams.startingPriceMultiplier
       - uint256(assetInParams.startingPriceMultiplier - assetInParams.endingPriceMultiplier)
         .mulDiv(elapsedTime, assetInParams.auctionDuration);
 
     // Compute auction price in asset out.
     (uint256 assetOutUsdPrice,,) = _getAssetPrice(s_assetOut, withValidation);
+    // calculate the value of assetIn in usd
     uint256 auctionUsdValue = amountIn.mulDivUp(assetInUsdPrice, 10 ** assetInParams.decimals).mulWadUp(priceMultiplier);
 
     // Convert USD value to asset out amount.

