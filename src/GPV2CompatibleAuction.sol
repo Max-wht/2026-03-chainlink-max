@@ -123,6 +123,7 @@ contract GPV2CompatibleAuction is BaseAuction, IERC1271, IGPV2CompatibleAuction 
   ) external view whenNotPaused returns (bytes4 magicValue) {
     GPv2Order.Data memory order = abi.decode(signature, (GPv2Order.Data));
 
+    //@audit[#2] this function dosen't require minBidUsdValue
     if (s_entered) {
       revert Errors.ReentrantCall();
     }
@@ -151,11 +152,14 @@ contract GPV2CompatibleAuction is BaseAuction, IERC1271, IGPV2CompatibleAuction 
     if (elapsedTime > assetParams.auctionDuration) {
       revert InvalidAuction(address(order.sellToken));
     }
+
+    //@follow
     (uint256 sellTokenUsdPrice,,) = _getAssetPrice(address(order.sellToken), true);
     uint256 minBuyAmount = _getAssetOutAmount(assetParams, sellTokenUsdPrice, order.sellAmount, elapsedTime, true);
     if (order.buyAmount < minBuyAmount) {
       revert InsufficientBuyAmount(order.buyAmount, minBuyAmount);
     }
+
     if (order.validTo < block.timestamp) {
       revert ExpiredOrder(order.validTo, block.timestamp);
     }

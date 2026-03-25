@@ -254,7 +254,7 @@ abstract contract BaseAuction is PriceManager, ITypeAndVersion, Caller, IBaseAuc
       uint256 auctionStart = s_auctionStarts[asset];
       if (auctionStart != 0) {
         //: the asset has been used
-      //so we need to calculate the value of the asset in the auction
+        //so we need to calculate the value of the asset in the auction
         uint256 assetBalance = IERC20(asset).balanceOf(address(this)); //`assetBalance means the asset has been in
         // auction`
         uint256 assetBalanceUsdValue = (assetBalance * assetPrice) / (10 ** assetParams.decimals);
@@ -262,13 +262,13 @@ abstract contract BaseAuction is PriceManager, ITypeAndVersion, Caller, IBaseAuc
           auctionStart + assetParams.auctionDuration < block.timestamp // Expired
             || (isPriceValid && assetBalanceUsdValue < assetParams.minAuctionSizeUsd) //Price is valid but less than
           // minSize
-          //@audit[#1] 
+          //@audit[#1]
         ) {
           endedAuctions[endedAuctionsIdx++] = asset;
         }
       } else if (isPriceValid) {
         // Price is vaild and the asset has never been used
-      // 2) Get the current asset value in USD available for auction.
+        // 2) Get the current asset value in USD available for auction.
         uint256 availableBalance = IERC20(asset).balanceOf(feeAggregator); //`availableBalance means the asset ready to
         // go to the auction`
         uint256 availableAssetUsdValue = (availableBalance * assetPrice) / (10 ** assetParams.decimals);
@@ -359,8 +359,9 @@ abstract contract BaseAuction is PriceManager, ITypeAndVersion, Caller, IBaseAuc
       } else {
         (assetPrice,,) = _getAssetPrice(asset, true);
       }
-      uint256 availableAssetUsdValue = (eligibleAssets[i].amount * assetPrice) / (10 ** assetDecimals);
 
+      //in order to avoid dust attack
+      uint256 availableAssetUsdValue = (eligibleAssets[i].amount * assetPrice) / (10 ** assetDecimals);
       if (availableAssetUsdValue < assetParams.minAuctionSizeUsd) {
         revert AmountBelowMinAuctionSize(availableAssetUsdValue, assetParams.minAuctionSizeUsd);
       }
@@ -382,7 +383,7 @@ abstract contract BaseAuction is PriceManager, ITypeAndVersion, Caller, IBaseAuc
       }
 
       _onAuctionEnd(endedAuctions[i], hasFeeAggregator);
-      delete s_auctionStarts[asset];
+      delete s_auctionStarts[asset]; //start==0
       emit AuctionEnded(asset);
     }
   }
@@ -447,7 +448,7 @@ abstract contract BaseAuction is PriceManager, ITypeAndVersion, Caller, IBaseAuc
     if (auctionStart == 0 || elapsedTime > assetParams.auctionDuration) {
       revert InvalidAuction(asset);
     }
- 
+
     (uint256 assetPrice,,) = _getAssetPrice(asset, true);
     uint256 bidUsdValue = (amount * assetPrice) / (10 ** assetParams.decimals);
     uint88 minBidUsdValue = s_minBidUsdValue;
@@ -809,11 +810,6 @@ abstract contract BaseAuction is PriceManager, ITypeAndVersion, Caller, IBaseAuc
     elapsedTime = elapsedTime > assetInParams.auctionDuration ? assetInParams.auctionDuration : elapsedTime;
 
     // Compute price multiplier based on linear decay with:
-    //
-    //                                              startingPriceMultiplier - endingPriceMultiplier
-    // priceMultiplier = startingPriceMultiplier - -------------------------------------------------(this is the decay rate)* elapsedTime
-    //                                                              auctionDuration
-    //
     // how many times the base price (1e18)
     uint256 priceMultiplier = assetInParams.startingPriceMultiplier
       - uint256(assetInParams.startingPriceMultiplier - assetInParams.endingPriceMultiplier)

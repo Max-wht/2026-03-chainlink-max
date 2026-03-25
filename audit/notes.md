@@ -33,6 +33,7 @@
   - [Errors.sol](#errorssol)
   - [Roles.sol](#rolessol)
 - [Short Risk Lens](#short-risk-lens)
+- [Check List](#check-list)
 
 ## Scope
 
@@ -699,3 +700,74 @@ The most important moving parts for audit attention are:
 - callback and multicall behavior across `BaseAuction`, `AuctionBidder`, and `Caller`
 - CoW order validation rules in `GPV2CompatibleAuction`
 - selector-level forwarding rules in `WorkflowRouter`
+
+## Check List
+
+### Denial-Of-Service
+
+#### WithDraw Pattern
+
+  1. [*] BaseAuction.sol::s_assetOutReceiver
+  2. [*] AuctionBidder::auctionCallback()
+
+#### minimum transaction amount forced
+
+  1. [*] BaseAuction::s_minBidUsdValue, the param is used in bid()
+  2. [*] BaseAuction::minAuctionSizeUsd, the param is used in performUpKeep() and ckeckUpKeep()"
+  3. [!] GPV2CompatibleAunction::isValidSignature() dose not check the minBidUsdValue
+
+#### token with blacklist
+
+  1. [*] if bidder in the blacklist of one token, tx will revert. Not big impact
+    -- eg: assetIn = usdc, assetOut = link
+
+#### queue leaded DOS
+
+  1. [*] COW dust allow
+
+#### low decimal token leaded DOS
+
+  1. [*] Not big impact
+
+#### handle external contract interactions
+
+  1. [] Chainlink DataStream
+  2. [] Chainlink Feed
+  3. [] Cow
+
+### Donation Attack
+
+  1. [*] all bids use `balanceOf` instead of internal counting, but no big impact
+
+### Front Run Attack
+
+#### LATER
+
+### Griefing Attack
+
+####  states can be changed by others
+
+  1. [*] No Found 
+
+#### internal call gas limit 63/64
+
+  1. [*] Use the Caller.sol to avoid missing call-revert
+
+### Minner Attack
+
+#### block.timestamp
+
+  1. [*] time-sensetive operation, In Ethereum pos, no big problem
+
+### Reentrancy Attack
+
+#### state change after external call
+
+  1. [*] No
+
+#### view reentrancy
+
+  1.[*] AuctionBidder::auctionCallBack() internal call BaseAuction::checkupKeep() -- no impact
+
+###
+

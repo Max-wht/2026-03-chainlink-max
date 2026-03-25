@@ -4,9 +4,9 @@
 
 **Impacted Contracts**
 
-- [PriceManager.sol](/Users/max/code/defi-security/competetive-audit/2026-03-chainlink-max/src/PriceManager.sol:142)
-- [BaseAuction.sol](/Users/max/code/defi-security/competetive-audit/2026-03-chainlink-max/src/BaseAuction.sol:439)
-- [GPV2CompatibleAuction.sol](/Users/max/code/defi-security/competetive-audit/2026-03-chainlink-max/src/GPV2CompatibleAuction.sol:154)
+- [PriceManager.sol]
+- [BaseAuction.sol]
+- [GPV2CompatibleAuction.sol]
 
 ## Summary
 
@@ -18,7 +18,7 @@ Because the cached price is consumed by auction start logic, bid validation, `ge
 
 ## Root Cause
 
-In [`PriceManager.transmit()`](/Users/max/code/defi-security/competetive-audit/2026-03-chainlink-max/src/PriceManager.sol:142), each verified report is written directly into `s_dataStreamsPrice[asset]`:
+In [`PriceManager.transmit()`], each verified report is written directly into `s_dataStreamsPrice[asset]`:
 
 ```solidity
 if (report.observationsTimestamp < block.timestamp - feedInfo.stalenessThreshold) {
@@ -42,10 +42,10 @@ Therefore, the following sequence is accepted:
 
 This is not just a stale UI/view issue. The rolled-back Data Streams price is directly used by core auction paths:
 
-- [`BaseAuction.bid()`](/Users/max/code/defi-security/competetive-audit/2026-03-chainlink-max/src/BaseAuction.sol:439) uses `_getAssetPrice(asset, true)` to value the bid in USD and compute the required `assetOutAmount`
-- [`BaseAuction.getAssetOutAmount()`](/Users/max/code/defi-security/competetive-audit/2026-03-chainlink-max/src/BaseAuction.sol:759) uses the cached price to quote auction output
-- [`BaseAuction.checkUpkeep()`](/Users/max/code/defi-security/competetive-audit/2026-03-chainlink-max/src/BaseAuction.sol:245) uses asset prices to decide whether an auction should start or end
-- [`GPV2CompatibleAuction.isValidSignature()`](/Users/max/code/defi-security/competetive-audit/2026-03-chainlink-max/src/GPV2CompatibleAuction.sol:154) derives the minimum acceptable buy amount from the cached price
+- [`BaseAuction.bid()`] uses `_getAssetPrice(asset, true)` to value the bid in USD and compute the required `assetOutAmount`
+- [`BaseAuction.getAssetOutAmount()`] uses the cached price to quote auction output
+- [`BaseAuction.checkUpkeep()`] uses asset prices to decide whether an auction should start or end
+- [`GPV2CompatibleAuction.isValidSignature()`] derives the minimum acceptable buy amount from the cached price
 
 Practical consequences:
 
@@ -110,3 +110,92 @@ s_dataStreamsPrice[asset] =
 ```
 
 This preserves monotonic price updates per asset and prevents rollback from out-of-order or replayed reports.
+
+# M-02: Sold-out or dust auctions can remain live after the auctioned asset price turns stale
+
+**Severity**: Medium
+
+**Impacted Contracts**
+
+- [BaseAuction.sol]
+
+## Summary
+
+[`BaseAuction.checkUpkeep()`] only closes a live auction when either:
+
+1. the auction duration has elapsed, or
+2. the remaining balance is below `minAuctionSizeUsd` and the asset price is still fresh
+
+This creates a liveness bug for auctions that are fully cleared, or reduced to economically untradeable dust, shortly before the asset price turns stale.
+
+Once the asset feed becomes stale, the non-expiry close path is disabled by `isPriceValid`, so the auction can remain marked as live in `s_auctionStarts[asset]` until `auctionDuration` elapses even though there is nothing meaningful left to sell.
+
+## Root Cause
+
+The close condition in [`BaseAuction.checkUpkeep()`] is:
+
+```solidity
+if (
+  auctionStart + assetParams.auctionDuration < block.timestamp
+    || (isPriceValid && assetBalanceUsdValue < assetParams.minAuctionSizeUsd)
+) {
+  endedAuctions[endedAuctionsIdx++] = asset;
+}
+```
+
+This means the dust-close branch only works while the price is fresh.
+
+At the same time, a live auction is tracked only by whether [`s_auctionStarts[asset] != 0`]. When a bidder fully clears the inventory in [`BaseAuction.bid()`], the auctioned asset balance can drop to zero immediately, but the live flag is not cleared there.
+
+Therefore, the following sequence is possible:
+
+1. An auction is started for `asset`
+2. A bidder buys the full remaining balance, or leaves only residual dust
+3. The asset price becomes stale before the next upkeep check
+4. `checkUpkeep()` does not add the auction to `endedAuctions` because:
+   - it is not expired yet, and
+   - the residual-size branch is gated on `isPriceValid`
+5. `s_auctionStarts[asset]` stays nonzero until expiry
+
+## Impact
+
+This is a temporary denial-of-service / stuck-state issue for the affected asset:
+
+- the collected `assetOut` remains inside the auction contract because [`_onAuctionEnd()`] is not reached
+- the asset cannot cleanly transition into a new auction while the old live flag is pinned
+- admin flows guarded by live-auction checks can also be blocked for the same asset until expiry
+
+The issue does not directly steal funds, but it can delay reserve forwarding and auction recycling for the full auction duration. I rate this as **Medium** because it affects protocol liveness and fund flow for a live production path.
+
+## Proof of Concept
+
+A runnable PoC was added in:
+
+- [test/poc/C4PoC.t.sol]
+
+The PoC does the following:
+
+1. Starts a USDC auction
+2. Fully clears the auction inventory through `bid()`
+3. Waits until the USDC feed is stale, but not until auction expiry
+4. Calls `checkUpkeep()`
+5. Observes that:
+   - `upkeepNeeded == false`
+   - the auction start timestamp is still pinned
+   - the collected LINK remains in the auction contract instead of being forwarded to reserves
+
+## Recommended Mitigation
+
+A fix based only on `assetBalance == 0` is too narrow. It fixes the exact sold-out case, but not the broader case where the remaining balance has become untradeable dust.
+
+The more complete fix is to end a live auction whenever its remaining inventory falls below the minimum executable auction size, without requiring the price to still be fresh at that moment.
+
+Because `minAuctionSizeUsd` is USD-denominated, the clean implementation is to cache a token-denominated residual threshold when the auction starts, then close the auction whenever:
+
+```solidity
+assetBalance < minExecutableResidualBalance
+```
+
+independent of later feed freshness.
+
+If the team wants a minimal short-term patch, treating `assetBalance == 0` as an unconditional end condition is still an improvement, but it should be viewed as a partial mitigation rather than the complete fix.
